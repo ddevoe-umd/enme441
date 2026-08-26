@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 Dashboard</title>
+
+  <!-- MQTT.js from CDN — this is the only external dependency -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #f8f7f4;
+      --surface: #ffffff;
+      --text: #2c2c2a;
+      --text-muted: #7a7870;
+      --border: #e5e3dc;
+      --accent: #1d6fb3;
+      --green: #1d9e75;
+      --red: #c94a4a;
+      --amber: #ba7517;
+      --green-bg: #e8f6f0;
+      --red-bg: #fceaea;
+      --code-bg: #f0efe8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 2rem;
+    }
+
+    /* ── Connection panel ── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .panel h2 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    .config-grid.three-col {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    label {
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 0.5rem 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    input:focus, select:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+      border-color: var(--accent);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    button {
+      padding: 0.5rem 1.25rem;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-connect {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-disconnect {
+      background: var(--red);
+      color: white;
+    }
+
+    /* ── Status indicator ── */
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      padding: 0.3rem 0.75rem;
+      border-radius: 20px;
+      margin-top: 0.75rem;
+    }
+
+    .status.offline { background: var(--red-bg); color: var(--red); }
+    .status.online { background: var(--green-bg); color: var(--green); }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* ── Sensor data ── */
+    .sensor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .sensor-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    .sensor-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin-bottom: 0.25rem;
+    }
+
+    .sensor-value {
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sensor-value.no-data {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    /* ── Controls ── */
+    .control-row {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .btn-cmd {
+      padding: 0.6rem 1.5rem;
+      border-radius: 6px;
+      font-weight: 500;
+      font-size: 0.85rem;
+    }
+
+    .btn-on { background: var(--green); color: white; }
+    .btn-off { background: var(--text-muted); color: white; }
+
+    .custom-cmd {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+      flex: 1 1 100%;
+    }
+
+    .custom-cmd input { flex: 1; }
+
+    .btn-send {
+      background: var(--amber);
+      color: white;
+      white-space: nowrap;
+    }
+
+    /* ── Log ── */
+    .log {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      max-height: 240px;
+      overflow-y: auto;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.78rem;
+      line-height: 1.7;
+      color: var(--text);
+    }
+
+    .log .ts { color: var(--text-muted); }
+    .log .topic { color: var(--accent); }
+    .log .sys { color: var(--amber); font-style: italic; }
+    .log:empty::before {
+      content: 'No messages yet...';
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .log-controls {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 0.5rem;
+    }
+
+    .btn-clear {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      font-size: 0.75rem;
+      padding: 0.25rem 0.75rem;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      body { padding: 1rem; }
+      .config-grid, .config-grid.three-col { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>ESP32 Dashboard</h1>
+  <p class="subtitle">Real-time MQTT communication with your microcontroller</p>
+
+  <!-- ─── Connection settings ─── -->
+  <div class="panel">
+    <h2>Broker connection</h2>
+    <div class="config-grid">
+      <div>
+        <label for="broker">Broker URL</label>
+        <input id="broker" type="text" placeholder="abc123.s1.eu.hivemq.cloud" value="69702dc0158e4b3ea7e406ed4c78ae13.s1.eu.hivemq.cloud">
+      </div>
+      <div>
+        <label for="port">WebSocket Port</label>
+        <input id="port" type="text" value="8884">
+      </div>
+    </div>
+
+    <div class="config-grid three-col" style="margin-top: 0.75rem;">
+      <div>
+        <label for="username">Username</label>
+        <input id="username" type="text" placeholder="course-student" value="enme441">
+      </div>
+      <div>
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="password" value="enme441iot">
+      </div>
+      <div>
+        <label for="studentId">Terpmail Username</label>
+        <input id="studentId" type="text" placeholder="">
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-connect" id="btnConnect" onclick="doConnect()">Connect</button>
+      <button class="btn-disconnect" id="btnDisconnect" onclick="doDisconnect()" disabled>Disconnect</button>
+    </div>
+
+    <div class="status offline" id="statusBadge">
+      <span class="status-dot"></span>
+      <span id="statusText">Disconnected</span>
+    </div>
+  </div>
+
+  <!-- ─── Sensor data ─── -->
+  <div class="panel">
+    <h2>Sensor data</h2>
+    <div class="sensor-grid" id="sensorGrid">
+      <div class="sensor-card">
+        <div class="sensor-label">sensor_1</div>
+        <div class="sensor-value no-data" id="val-sensor_1">—</div>
+      </div>
+      <div class="sensor-card">
+        <div class="sensor-label">sensor_2</div>
+        <div class="sensor-value no-data" id="val-sensor_2">—</div>
+      </div>
+      <div class="sensor-card">
+        <div class="sensor-label">Uptime (ms)</div>
+        <div class="sensor-value no-data" id="val-uptime">—</div>
+      </div>
+      <div class="sensor-card">
+        <div class="sensor-label">Device status</div>
+        <div class="sensor-value no-data" id="val-status">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Controls ─── -->
+  <div class="panel">
+    <h2>Send commands</h2>
+    <div class="control-row">
+      <button class="btn-cmd btn-on" onclick="sendCmd('LED_ON')" id="btnLedOn" disabled>LED On</button>
+      <button class="btn-cmd btn-off" onclick="sendCmd('LED_OFF')" id="btnLedOff" disabled>LED Off</button>
+      <div class="custom-cmd">
+        <input id="customCmd" type="text" placeholder='Custom JSON, e.g. {"cmd":"SET_INTERVAL","value":10}'>
+        <button class="btn-cmd btn-send" onclick="sendCustom()" id="btnSendCustom" disabled>Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Message log ─── -->
+  <div class="panel">
+    <h2>Message log</h2>
+    <div class="log" id="log"></div>
+    <div class="log-controls">
+      <button class="btn-clear" onclick="document.getElementById('log').innerHTML=''">Clear log</button>
+    </div>
+  </div>
+
+  <script>
+    // ================================================================
+    // MQTT connection and message handling
+    // ================================================================
+
+    let client = null;
+
+    function getConfig() {
+      return {
+        broker:    document.getElementById('broker').value.trim(),
+        port:      document.getElementById('port').value.trim(),
+        username:  document.getElementById('username').value.trim(),
+        password:  document.getElementById('password').value.trim(),
+        studentId: document.getElementById('studentId').value.trim(),
+      };
+    }
+
+    // ── Connect ──
+    function doConnect() {
+      const cfg = getConfig();
+      if (!cfg.broker || !cfg.username || !cfg.password || !cfg.studentId) {
+        return logSys('Please fill in all connection fields.');
+      }
+
+      // Build the WebSocket URL
+      // HiveMQ Cloud uses wss://<host>:8884/mqtt
+      const url = `wss://${cfg.broker}:${cfg.port}/mqtt`;
+
+      logSys(`Connecting to ${url}...`);
+
+      client = mqtt.connect(url, {
+        username: cfg.username,
+        password: cfg.password,
+        clientId: `web_${cfg.studentId}_${Math.random().toString(16).slice(2, 8)}`,
+        protocolVersion: 4,
+        clean: true,
+        reconnectPeriod: 5000,
+      });
+
+      client.on('connect', () => {
+        logSys('Connected to broker.');
+        setStatus(true);
+        setControls(true);
+
+        // Subscribe to sensor data and status topics
+        const topicSensor = `enme441/${cfg.studentId}/sensor`;
+        const topicStatus = `enme441/${cfg.studentId}/status`;
+
+        client.subscribe([topicSensor, topicStatus], (err) => {
+          if (err) {
+            logSys('Subscribe error: ' + err.message);
+          } else {
+            logSys(`Subscribed to ${topicSensor} and ${topicStatus}`);
+          }
+        });
+      });
+
+      client.on('message', (topic, message) => {
+        const payload = message.toString();
+        logMsg(topic, payload);
+
+        // Update sensor display
+        if (topic.endsWith('/sensor')) {
+          try {
+            const data = JSON.parse(payload);
+            updateSensor('sensor_1', data.sensor_1);
+            updateSensor('sensor_2', data.sensor_2);
+            updateSensor('uptime', data.uptime);
+
+            // If the ESP32 sends additional fields, display them too
+            for (const [key, value] of Object.entries(data)) {
+              if (key !== 'sensor_1' && key !== 'sensor_2' && key !== 'uptime') {
+                updateSensor(key, value);
+              }
+            }
+          } catch (e) {
+            // Not JSON — display raw value
+            updateSensor('sensor_1', payload);
+          }
+        }
+
+        // Update device status
+        if (topic.endsWith('/status')) {
+          updateSensor('status', payload);
+        }
+      });
+
+      client.on('error', (err) => {
+        logSys('Connection error: ' + err.message);
+        setStatus(false);
+      });
+
+      client.on('close', () => {
+        logSys('Connection closed.');
+        setStatus(false);
+        setControls(false);
+      });
+
+      client.on('reconnect', () => {
+        logSys('Attempting to reconnect...');
+      });
+    }
+
+    // ── Disconnect ──
+    function doDisconnect() {
+      if (client) {
+        client.end(true);
+        client = null;
+        logSys('Disconnected.');
+        setStatus(false);
+        setControls(false);
+      }
+    }
+
+    // ── Send a predefined command ──
+    function sendCmd(cmd) {
+      const cfg = getConfig();
+      const topic = `enme441/${cfg.studentId}/commands`;
+      const payload = JSON.stringify({ cmd: cmd });
+      client.publish(topic, payload);
+      logSys(`Sent to ${topic}: ${payload}`);
+    }
+
+    // ── Send a custom command ──
+    function sendCustom() {
+      const cfg = getConfig();
+      const input = document.getElementById('customCmd').value.trim();
+      if (!input) return;
+      const topic = `enme441/${cfg.studentId}/commands`;
+      client.publish(topic, input);
+      logSys(`Sent to ${topic}: ${input}`);
+      document.getElementById('customCmd').value = '';
+    }
+
+    // ================================================================
+    // UI helpers
+    // ================================================================
+
+    function setStatus(online) {
+      const badge = document.getElementById('statusBadge');
+      const text = document.getElementById('statusText');
+      badge.className = online ? 'status online' : 'status offline';
+      text.textContent = online ? 'Connected' : 'Disconnected';
+      document.getElementById('btnConnect').disabled = online;
+      document.getElementById('btnDisconnect').disabled = !online;
+    }
+
+    function setControls(enabled) {
+      document.getElementById('btnLedOn').disabled = !enabled;
+      document.getElementById('btnLedOff').disabled = !enabled;
+      document.getElementById('btnSendCustom').disabled = !enabled;
+    }
+
+    function updateSensor(key, value) {
+      let el = document.getElementById(`val-${key}`);
+      if (!el) {
+        // Dynamically create a card for unknown sensor fields
+        const grid = document.getElementById('sensorGrid');
+        const card = document.createElement('div');
+        card.className = 'sensor-card';
+        card.innerHTML = `
+          <div class="sensor-label">${key}</div>
+          <div class="sensor-value" id="val-${key}">—</div>
+        `;
+        grid.appendChild(card);
+        el = document.getElementById(`val-${key}`);
+      }
+      el.textContent = value;
+      el.classList.remove('no-data');
+    }
+
+    function logMsg(topic, payload) {
+      const log = document.getElementById('log');
+      const ts = new Date().toLocaleTimeString();
+      log.innerHTML += `<div><span class="ts">${ts}</span>  <span class="topic">${topic}</span>  ${escapeHtml(payload)}</div>`;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function logSys(text) {
+      const log = document.getElementById('log');
+      const ts = new Date().toLocaleTimeString();
+      log.innerHTML += `<div><span class="ts">${ts}</span>  <span class="sys">${escapeHtml(text)}</span></div>`;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Allow Enter key in custom command input
+    document.getElementById('customCmd').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !document.getElementById('btnSendCustom').disabled) {
+        sendCustom();
+      }
+    });
+  </script>
+</body>
+</html>
