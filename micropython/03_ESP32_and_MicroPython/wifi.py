@@ -32,5 +32,14 @@ def connect():
         else:
             # run only if the while() loop finished, i.e. connection made
             print('WiFi connected:', wlan.ifconfig())
+            # network.WLAN on ESP32 defaults to PM_PERFORMANCE — modem power save on. 
+            # The radio sleeps between DTIM beacons and wakes on the beacon interval 
+            # (~100 ms), and every wake preempts the system for a few milliseconds. 
+            # This creates issues for real-time tasks where timing is critical, so
+            # turn the performance mode off. The cost is higher power 
+            # (80-100 mA @ 3.3 V).
+            wlan.config(pm=network.WLAN.PM_NONE)
             return
     print('Could not connect to any known WiFi network.')
+
+
