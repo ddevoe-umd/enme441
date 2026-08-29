@@ -144,6 +144,22 @@
 
     .status.offline { background: var(--red-bg); color: var(--red); }
     .status.online { background: var(--green-bg); color: var(--green); }
+    .status.unknown { background: var(--code-bg); color: var(--text-muted); }
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    .status-label {
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-size: 0.7rem;
+      opacity: 0.75;
+    }
 
     .status-dot {
       width: 7px;
@@ -304,9 +320,17 @@
       <button class="btn-disconnect" id="btnDisconnect" onclick="doDisconnect()" disabled>Disconnect</button>
     </div>
 
-    <div class="status offline" id="statusBadge">
-      <span class="status-dot"></span>
-      <span id="statusText">Disconnected</span>
+    <div class="status-row">
+      <div class="status offline" id="statusBadge">
+        <span class="status-dot"></span>
+        <span class="status-label">Broker</span>
+        <span id="statusText">Disconnected</span>
+      </div>
+      <div class="status unknown" id="deviceBadge">
+        <span class="status-dot"></span>
+        <span class="status-label">ESP32</span>
+        <span id="deviceText">Unknown</span>
+      </div>
     </div>
   </div>
 
@@ -362,6 +386,19 @@
 
     let client = null;
 
+    // ── ESP32 liveness watchdog ──────────────────────────────────────
+    // The broker only publishes the Last Will after the ESP32 misses its
+    // keep-alive (typically 1.5x the keepalive interval, so 60-90 s with the
+    // default settings).  That is far too slow to notice a dead device, so the
+    // dashboard also times out on its own: if no message arrives from the
+    // ESP32 within DEVICE_TIMEOUT_MS, we declare it offline.  Set this to a
+    // few times the ESP32's publish interval (main.py publishes every 5 s).
+    const DEVICE_TIMEOUT_MS = 15000;
+
+    let lastDeviceMsg = 0;      // timestamp of the last message from the ESP32
+    let deviceOnline = false;
+    let watchdogTimer = null;
+
     function getConfig() {
       return {
         broker:    document.getElementById('broker').value.trim(),
@@ -398,6 +435,7 @@
         logSys('Connected to broker.');
         setStatus(true);
         setControls(true);
+        startWatchdog();
 
         // Subscribe to sensor data and status topics
         const topicSensor = `enme441/${cfg.studentId}/sensor`;
@@ -415,6 +453,10 @@
       client.on('message', (topic, message) => {
         const payload = message.toString();
         logMsg(topic, payload);
+
+        // Any traffic from the ESP32 counts as a sign of life
+        lastDeviceMsg = Date.now();
+        if (!topic.endsWith('/status')) setDevice(true);
 
         // Update sensor display
         if (topic.endsWith('/sensor')) {
@@ -436,9 +478,11 @@
           }
         }
 
-        // Update device status
+        // Update device status.  An "offline" payload here is the Last Will,
+        // published by the broker on the ESP32's behalf.
         if (topic.endsWith('/status')) {
           updateSensor('status', payload);
+          setDevice(!/offline/i.test(payload));
         }
       });
 
@@ -451,6 +495,7 @@
         logSys('Connection closed.');
         setStatus(false);
         setControls(false);
+        stopWatchdog();
       });
 
       client.on('reconnect', () => {
@@ -466,6 +511,7 @@
         logSys('Disconnected.');
         setStatus(false);
         setControls(false);
+        stopWatchdog();
       }
     }
 
@@ -500,6 +546,42 @@
       text.textContent = online ? 'Connected' : 'Disconnected';
       document.getElementById('btnConnect').disabled = online;
       document.getElementById('btnDisconnect').disabled = !online;
+    }
+
+    // Broker status only reflects the browser's own link to the broker.
+    // The ESP32 has its own badge, driven by setDevice() below.
+    function setDevice(online) {
+      const badge = document.getElementById('deviceBadge');
+      // Nothing to do unless the state actually changed (avoids log spam)
+      if (online === deviceOnline && badge.className !== 'status unknown') return;
+      deviceOnline = online;
+      badge.className = online ? 'status online' : 'status offline';
+      document.getElementById('deviceText').textContent = online ? 'Online' : 'Offline';
+      if (!online) logSys('ESP32 is offline.');
+    }
+
+    function setDeviceUnknown() {
+      deviceOnline = false;
+      document.getElementById('deviceBadge').className = 'status unknown';
+      document.getElementById('deviceText').textContent = 'Unknown';
+    }
+
+    // Check once a second whether the ESP32 has gone quiet
+    function startWatchdog() {
+      stopWatchdog();
+      lastDeviceMsg = Date.now();
+      watchdogTimer = setInterval(() => {
+        if (deviceOnline && Date.now() - lastDeviceMsg > DEVICE_TIMEOUT_MS) {
+          setDevice(false);
+          updateSensor('status', `no data for ${Math.round(DEVICE_TIMEOUT_MS / 1000)}s`);
+        }
+      }, 1000);
+    }
+
+    function stopWatchdog() {
+      if (watchdogTimer) clearInterval(watchdogTimer);
+      watchdogTimer = null;
+      setDeviceUnknown();
     }
 
     function setControls(enabled) {
