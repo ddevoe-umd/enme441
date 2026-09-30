@@ -15,7 +15,7 @@ class Shifter():
         self.clockPin = Pin(clock, Pin.OUT)
 
     def _ping(self, p):
-        """ping the clock (CLK) or latch (RCLK) pin"""
+        """ping the clock (SRCLK) or latch (RCLK) pin"""
         p.value(1)
         time.sleep_us(10)
         p.value(0)
@@ -31,6 +31,11 @@ class Shifter():
         (N-1)*8 < num_bits <= N*8 implies there are N chained
         shift registers
         """
+
+        # Send the word
+        for i in range(num_bits):
+            self.dataPin.value(data & (1<<i))
+            self._ping(self.clockPin)
 
         """
         Load bits short of a byte with 0.  The math works because
@@ -49,13 +54,7 @@ class Shifter():
             self.dataPin.value(0)
             self._ping(self.clockPin)
 
-        # Send the word
-        for i in range(num_bits):
-            self.dataPin.value(data & (1<<i))
-            self._ping(self.clockPin)
         self._ping(self.latchPin)
-        
-    
 
 # ----------------------------------------------------------
 # Example
