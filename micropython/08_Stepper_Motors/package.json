@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0",
+  "urls": [
+    ["stepper.py", "stepper.py"],
+    ["stepper_thread.py", "stepper_thread.py"],
+    ["stepper_with_shifter.py", "stepper_with_shifter.py"],
+    ["stepper_async.py", "stepper_async.py"],
+    ["stepper_async_shifter.py", "stepper_async_shifter.py"],
+    ["stepper_async_timer.py", "stepper_async_timer.py"],
+    ["stepper_async_timer_shifter.py", "stepper_async_timer_shifter.py"]
+  ],
+  "deps": [
+    ["github:ddevoe-umd/enme441/micropython/06_Shift_Registers", "HEAD"]
+  ]
+}

@@ -1,15 +1,10 @@
 # =============================================================================
 # Stepper class -- MicroPython on ESP32-C3
-# Hardware Timer generates the step tick, with shift register drive
-#
-# Versions:
-#   stepper_async.py                asyncio timing, direct drive
-#   stepper_async_shifter.py        asyncio timing, shift register
-#   stepper_async_timer.py          timer timing,   direct drive
-#   stepper_async_timer_shifter.py  timer timing,   shift register   <-- this file
+# Hardware Timer generates the step tick
+# Shift register + darlington array drive
 # =============================================================================
 #
-# Issue with stepper_async.py (no Timer)
+# Issue with asyncio w/o Timer
 # -------------------------------------
 # asyncio.sleep_ms(2) does always yield "2 ms". The event loop works out
 # how long until the next task is due and calls poll() with that timeout. 
@@ -53,7 +48,7 @@ from machine import Timer
 
 # If an exception escapes a scheduled/IRQ callback, MicroPython needs a
 # pre-allocated buffer to build the traceback, otherwise you get a bare
-# "no memory" and no idea what went wrong. Cheap insurance, set once.
+# "no memory" and no idea what went wrong.
 micropython.alloc_emergency_exception_buf(100)
 
 
@@ -389,7 +384,7 @@ async def main():
     m2.go_angle(0)
 
     # Nothing above has moved yet -- the tasks are queued and only run after
-    # main() yields. Waiting on both motors does that.
+    # main() yields. Awaiting on both motors does that.
     await m1.idle()
     await m2.idle()
 

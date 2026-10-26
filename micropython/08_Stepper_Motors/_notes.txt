@@ -1,0 +1,24 @@
+
+
+
+stepper.py
+    Drive 1 motor directly from a ULN2803 Darlington array
+
+stepper_with_shifter.py
+    Drive 1 motor through a shift register + ULN2803
+
+stepper_thread.py
+    Drive 2 motors directly from a ULN2803
+    using threads for concurrency (with major parralelism limitations)
+
+stepper_async.py
+    Drive 2 motors directly from a ULN2803
+    using asyncio for concurrency (with speed limitations)
+
+stepper_async_timer.py
+    Drive 2 motors directly from a ULN2803
+    using asyncio + hardware timer for concurrency at high speed
+
+stepper_async_timer_shifter.py
+    Drive 2 motors through a shift register + ULN2803
+    using asyncio + hardware timer for concurrency at high speed
