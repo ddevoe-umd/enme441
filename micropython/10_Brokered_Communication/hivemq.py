@@ -72,7 +72,7 @@ def run():
         v3 = [0,1,2]
         v4 = {'a':v1, 'b':v2, 'c':v3}
         payload = json.dumps({'sensor_1':sensor_1, 'sensor_2':sensor_2, 'float': v1, 'bool': v2, 'list': v3, 'dict': v4, 'uptime': time.ticks_ms()})
-        client.publish(config.TOPIC_SENSOR, payload)
+        client.publish(config.TOPIC_SENSOR, payload.encode())  # Encode payload as bytes object
         print(f'Published: {payload}')
 
         time.sleep(5)  # Publish every 5 seconds
