@@ -273,7 +273,28 @@
       font-size: 0.75rem;
       padding: 0.25rem 0.75rem;
     }
-
+/* ── Turret controls ── */
+.turret-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+}
+.turret-row .field { width: 90px; }
+.turret-row .field.axis { width: 80px; }
+.btn-turret { background: var(--accent); color: white; }
+.btn-fire   { background: var(--amber);  color: white; }
+.btn-stop {
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 1.1rem;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: var(--red);
+  color: white;
+}
     /* ── Responsive ── */
     @media (max-width: 600px) {
       body { padding: 1rem; }
@@ -370,6 +391,36 @@
     </div>
   </div>
 
+    <!-- ─── Turret controls ─── -->
+  <div class="panel">
+    <h2>Turret</h2>
+
+    <div class="turret-row">
+      <div class="field"><label for="goAz">Azimuth (°)</label>
+        <input id="goAz" type="number" step="1" value="0"></div>
+      <div class="field"><label for="goAlt">Altitude (°)</label>
+        <input id="goAlt" type="number" step="1" value="0"></div>
+      <button class="btn-cmd btn-turret turret-ctl" onclick="goTo()" disabled>Go</button>
+    </div>
+
+    <div class="turret-row">
+      <button class="btn-cmd btn-turret turret-ctl" onclick="jog('az',-1)" disabled>Az −1°</button>
+      <button class="btn-cmd btn-turret turret-ctl" onclick="jog('az',1)" disabled>Az +1°</button>
+      <button class="btn-cmd btn-turret turret-ctl" onclick="jog('alt',-1)" disabled>Alt −1°</button>
+      <button class="btn-cmd btn-turret turret-ctl" onclick="jog('alt',1)" disabled>Alt +1°</button>
+    </div>
+
+    <div class="turret-row">
+      <div class="field axis"><label for="stepAxis">Fine step axis</label>
+        <select id="stepAxis"><option value="az">az</option><option value="alt">alt</option></select></div>
+      <button class="btn-cmd btn-turret turret-ctl" onclick="fineStep(-10)" disabled>−10 steps</button>
+      <button class="btn-cmd btn-turret turret-ctl" onclick="fineStep(10)" disabled>+10 steps</button>
+      <button class="btn-cmd btn-fire turret-ctl" onclick="sendJson({cmd:'FIRE', seconds:3})" disabled>FIRE (3 s)</button>
+    </div>
+
+    <button class="btn-stop turret-ctl" id="btnStop" onclick="sendJson({cmd:'STOP'})" disabled>STOP (space)</button>
+  </div>
+  
   <!-- ─── Message log ─── -->
   <div class="panel">
     <h2>Message log</h2>
@@ -534,6 +585,44 @@
       logSys(`Sent to ${topic}: ${input}`);
       document.getElementById('customCmd').value = '';
     }
+        // ── Turret commands ──
+    function sendJson(obj) {
+      if (!client || !client.connected) return logSys('Not connected.');
+      const cfg = getConfig();
+      const topic = `enme441/${cfg.studentId}/commands`;
+      const payload = JSON.stringify(obj);
+      client.publish(topic, payload);
+      logSys(`Sent to ${topic}: ${payload}`);
+    }
+
+    function goTo() {
+      const az  = parseFloat(document.getElementById('goAz').value);
+      const alt = parseFloat(document.getElementById('goAlt').value);
+      if (isNaN(az) || isNaN(alt)) return logSys('Enter both azimuth and altitude.');
+      sendJson({ cmd: 'GOTO', az: az, alt: alt });
+    }
+
+    function jog(axis, deg) {
+      sendJson({ cmd: 'JOG', axis: axis, deg: deg });
+    }
+
+    function fineStep(n) {
+      sendJson({ cmd: 'STEP', axis: document.getElementById('stepAxis').value, steps: n });
+    }
+
+    // Spacebar = STOP, except while typing in a field
+    document.addEventListener('keydown', (e) => {
+      if (e.code !== 'Space') return;
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      e.preventDefault();
+      if (e.repeat) return;
+      // a focused button would also "click" on Space, so drop the focus first
+      if (document.activeElement && document.activeElement.tagName === 'BUTTON') {
+        document.activeElement.blur();
+      }
+      if (client && client.connected) sendJson({ cmd: 'STOP' });
+    });
 
     // ================================================================
     // UI helpers
@@ -584,10 +673,11 @@
       setDeviceUnknown();
     }
 
-    function setControls(enabled) {
+        function setControls(enabled) {
       document.getElementById('btnLedOn').disabled = !enabled;
       document.getElementById('btnLedOff').disabled = !enabled;
       document.getElementById('btnSendCustom').disabled = !enabled;
+      document.querySelectorAll('.turret-ctl').forEach(b => b.disabled = !enabled);
     }
 
     function updateSensor(key, value) {
